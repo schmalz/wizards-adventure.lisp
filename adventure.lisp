@@ -16,6 +16,8 @@
 
 (defparameter *location* 'living-room)
 
+(defparameter *allowed-commands* '(look walk pickup inventory))
+
 (defun describe-location (loc nodes)
   (cadr (assoc loc nodes)))
 
@@ -49,20 +51,80 @@
   (let ((next (find direction
                     (cdr (assoc *location* *edges*))
                     :key #'cadr)))
-    (if next
-        (progn (setf *location* (car next))
-               (look))
-        '(you can not go that way))))
+    (cond (next ; (not (null next))
+            (setf *location* (car next))
+            (look))
+          (t
+            '(you can not go that way)))))
 
 (defun pickup (object)
   (cond ((member object
                  (objects-at *location* *objects* *object-locations*))
-         (push (list object 'body)
-               *object-locations*)
-         `(you are now carrying the ,object))
+           (push (list object 'body)
+                 *object-locations*)
+           `(you are now carrying the ,object))
         (t
-         '(you can not get that.))))
+          '(you can not get that))))
 
 (defun inventory ()
   (cons 'items-
         (objects-at 'body *objects* *object-locations*)))
+
+(defun game-read ()
+  (let ((cmd (read-from-string (concatenate 'string
+                                            "("
+                                            (read-line)
+                                            ")"))))
+    (flet ((quote-it (x)
+             (list 'quote x)))
+      (cons (car cmd)
+            (mapcar #'quote-it
+                    (cdr cmd))))))
+
+(defun game-eval (cmd)
+  (cond ((member (car cmd)
+                 *allowed-commands*)
+           (eval cmd))
+        (t
+           '(i do not know that command))))
+
+(defun tweak-text (lst caps lit)
+  (when lst
+    (let ((item (car lst))
+          (rest (cdr lst)))
+      (cond ((eq item #\space)
+               (cons item
+                     (tweak-text rest caps lit)))
+            ((member item
+                     '(#\! #\? #\.))
+               (cons item
+                     (tweak-text rest t lst)))
+            ((eq item #\")
+               (tweak-text rest
+                           caps
+                           (not lit)))
+            (lit
+               (cons item
+                     (tweak-text rest nil lit)))
+            ((or caps lit)
+               (cons (char-upcase item)
+                     (tweak-text rest nil lit)))
+            (t
+               (cons (char-downcase item)
+                     (tweak-text rest nil nil)))))))
+
+(defun game-print (lst)
+  (princ (coerce (tweak-text (coerce (string-trim "() "
+                                                  (prin1-to-string lst))
+                                     'list)
+                             t
+                             nil)
+                 'string))
+  (fresh-line))
+
+(defun game-repl ()
+  (let ((cmd (game-read)))
+    (unless (eq (car cmd)
+                'quit)
+      (game-print (game-eval cmd))
+      (game-repl))))
